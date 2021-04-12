@@ -52,7 +52,7 @@ namespace BlobCopyWorkerJob
 			//also flush any final job tally
 			var task = Task.Run(async () =>
 			{
-				while (!stoppingToken.IsCancellationRequested)
+				do
 				{
 					var keys = _memoryCache.ToArray()
 						.Where(x => x.Value.LastUpdate < DateTime.UtcNow.Subtract(TimeSpan.FromMinutes(2)))
@@ -72,7 +72,7 @@ namespace BlobCopyWorkerJob
 					}
 
 					await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-				}
+				} while (!stoppingToken.IsCancellationRequested);
 			});
 			
 
@@ -129,7 +129,7 @@ return commands;", new [] { (RedisKey)"copyjob_files" });
 						Interlocked.Decrement(ref activeCopyRequests);
 						if (task.IsCompletedSuccessfully && task.Result.Item2.IsSuccessStatusCode)
 						{
-							var tally = _memoryCache.GetOrAdd(jobId, new JobTally());
+							var tally = _memoryCache.GetOrAdd(jobId, (_) => new JobTally());
 							Interlocked.Increment(ref tally.Success);
 							tally.LastUpdate = DateTime.UtcNow;
 						}
@@ -137,7 +137,7 @@ return commands;", new [] { (RedisKey)"copyjob_files" });
 						{
 							_logger.LogError(task.Exception, (task.Exception?.Message ?? task.Result.Item2.ReasonPhrase ?? "Unknown failure") + " - " +
 							                                 task.Result.file);
-							var tally = _memoryCache.GetOrAdd(jobId, new JobTally());
+							var tally = _memoryCache.GetOrAdd(jobId, (_) => new JobTally());
 							Interlocked.Increment(ref tally.Fail);
 							tally.LastUpdate = DateTime.UtcNow;
 						}
