@@ -28,6 +28,15 @@ spec:
           ports:
             - containerPort: 80
               protocol: TCP
+          env:
+            - name: RedisHost
+              value: ''
+            - name: RedisPassword
+              value: ''
+            - name: RedisPrefix
+              value: ''
+            - name: ServiceBus
+              value: ''
           resources:
             requests:
               cpu: '1'
