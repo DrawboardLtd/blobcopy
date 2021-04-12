@@ -1,0 +1,77 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: blobcopyworkerjob
+  namespace: us-dev-sam
+  labels:
+    service: blobcopyworkerjob  
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      service: blobcopyworkerjob
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        service: blobcopyworkerjob
+    spec:
+      volumes:
+        - name: secrets
+          secret:
+            secretName: hostcfg
+            defaultMode: 420
+            optional: false
+      containers:
+        - name: upload-task-service-worker
+          image: 'drawboardus.azurecr.io/blobcopyworkerjob:latest'
+          ports:
+            - containerPort: 80
+              protocol: TCP
+          resources:
+            requests:
+              cpu: '1'
+              memory: 256Mi
+          # livenessProbe:
+          #   httpGet:
+          #     path: /
+          #     port: 80
+          #     scheme: HTTP
+          #   initialDelaySeconds: 60
+          #   timeoutSeconds: 60
+          #   periodSeconds: 90
+          #   successThreshold: 1
+          #   failureThreshold: 4
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: Always
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 60
+      dnsPolicy: ClusterFirst
+      automountServiceAccountToken: true
+      shareProcessNamespace: false
+      securityContext: {}
+      imagePullSecrets:
+        - name: docker-registry
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/os
+                    operator: In
+                    values:
+                      - linux
+                  - key: agentpool
+                    operator: In
+                    values:
+                      - devagents
+      schedulerName: default-scheduler
+      enableServiceLinks: true
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
