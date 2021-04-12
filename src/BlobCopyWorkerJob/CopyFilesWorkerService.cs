@@ -48,6 +48,8 @@ namespace BlobCopyWorkerJob
 			var activeCopyRequests = 0;
 			var filesProcessed = 0;
 
+			//cache clean up loop
+			//also flush any final job tally
 			var task = Task.Run(async () =>
 			{
 				while (!stoppingToken.IsCancellationRequested)
@@ -59,7 +61,14 @@ namespace BlobCopyWorkerJob
 
 					foreach (var key in keys)
 					{
-						_memoryCache.TryRemove(key, out _);
+						if (_memoryCache.TryRemove(key, out var tally))
+						{
+							var noSuccess = Interlocked.Exchange(ref tally.Success, 0);
+							var noFails = Interlocked.Exchange(ref tally.Fail, 0);
+
+							_database.HashIncrement(key, "success", noSuccess, flags: CommandFlags.FireAndForget);
+							_database.HashIncrement(key, "failure", noFails, flags: CommandFlags.FireAndForget);
+						}
 					}
 
 					await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
