@@ -46,11 +46,11 @@ namespace BlobCopyListJob
 		    string jobId = (string)args.Message.ApplicationProperties["JobId"];
 
 		    _logger.LogInformation("Job Received");
-		    
+		    var count = 0;
+
 			using (var httpClient = new HttpClient(_socketsHandler, false))
 			{
-				var count = 0;
-			    do
+				do
 			    {
 				    using (var request = new HttpRequestMessage(HttpMethod.Get,
 					    $"https://{sourceAccountName}.blob.core.windows.net/{sourceContainer}?restype=container&marker={nextMarker}&comp=list&include=metadata&{sourceSas}")
@@ -62,15 +62,22 @@ namespace BlobCopyListJob
 						    new XmlReaderSettings {Async = true}))
 					    {
 						    var values = new List<string>();
+						    string name = null;
 						    while (await reader.ReadAsync())
 						    {
 							    if (reader.Name == "Name" && reader.NodeType == XmlNodeType.Element)
 							    {
 								    count++;
 									await reader.ReadAsync();
-								    values.Add(
-									    $"{sourceAccountName}|{sourceSas}|{sourceContainer}|{destinationAccountName}|{destinationSas}|{destinationContainer}|{jobId}|{reader.Value}");
+									name = reader.Value;
 							    }
+
+							    if (reader.Name == "Last-Modified" && reader.NodeType == XmlNodeType.Element)
+							    {
+								    await reader.ReadAsync();
+								    values.Add(
+									    $"{sourceAccountName}|{sourceSas}|{sourceContainer}|{destinationAccountName}|{destinationSas}|{destinationContainer}|{jobId}|{name}|{reader.Value}");
+								}
 
 							    if (reader.Name == "NextMarker" && reader.NodeType == XmlNodeType.Element)
 							    {
@@ -84,7 +91,8 @@ namespace BlobCopyListJob
 									_database.ListRightPush($"copyjob_files",
 									    values.Select(x => (RedisValue) x).ToArray(),
 									    flags: CommandFlags.FireAndForget);
-								    values.Clear();
+									_database.HashIncrement(jobId, "total_files", values.Count, flags: CommandFlags.FireAndForget);
+									values.Clear();
 							    }
 						    }
 
@@ -93,6 +101,8 @@ namespace BlobCopyListJob
 							    _logger.LogInformation("Flushing files - Done {Count}", count);
 								_database.ListRightPush($"copyjob_files", values.Select(x => (RedisValue) x).ToArray(),
 								    flags: CommandFlags.FireAndForget);
+								_database.HashIncrement(jobId, "total_files", values.Count, flags: CommandFlags.FireAndForget);
+								_database.HashSet(jobId, "done", DateTimeOffset.Now.ToString("O"), flags: CommandFlags.FireAndForget);
 						    }
 					    }
 				    }
@@ -110,7 +120,7 @@ namespace BlobCopyListJob
 			//job source listener?
 			var receiver = _serviceBusClient.CreateProcessor("copyjobs", new ServiceBusProcessorOptions()
 			{
-				AutoCompleteMessages = false
+				
 			});
 
 			receiver.ProcessMessageAsync += Do;
